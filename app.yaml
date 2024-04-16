@@ -11,7 +11,7 @@ handlers:
   secure: always
 
 automatic_scaling:
-  min_idle_instances: auto  # Min number of idle instances.
-  max_idle_instances: auto  # Max number of idle instances.
-  min_pending_latency: auto  # Min time a request waits in the pending queue.
-  max_pending_latency: auto
+  min_idle_instances: automatic  # Adjusts automatically. Change to a number if you need a specific count.
+  max_idle_instances: automatic  # Adjusts automatically. Change to a number if you need a specific count.
+  min_pending_latency: automatic  # Adjusts automatically. Specify times like '100ms' for specific needs.
+  max_pending_latency: automatic
