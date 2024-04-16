@@ -3,3 +3,5 @@ google-api-python-client
 google-auth
 google-auth-httplib2
 google-auth-oauthlib
+Flask==2.0.1  # Example, use the version appropriate for your application.
+gunicorn==20.0.4

@@ -1,0 +1,17 @@
+runtime: python39  
+
+entrypoint: gunicorn -b :$PORT youtube_dashboard:app
+
+env: standard
+instance_class: F1  # Specifies an instance class, adjust as needed.
+
+handlers:
+- url: /.*
+  script: auto
+  secure: always
+
+automatic_scaling:
+  min_idle_instances: auto  # Min number of idle instances.
+  max_idle_instances: auto  # Max number of idle instances.
+  min_pending_latency: auto  # Min time a request waits in the pending queue.
+  max_pending_latency: auto
