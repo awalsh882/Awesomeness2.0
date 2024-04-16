@@ -1,12 +1,9 @@
-
-import flask
-
 import os
 from googleapiclient.discovery import build
 from flask import Flask, request, jsonify
 
 # Initialize Flask
-app = flask.Flask(__name__)
+app = Flask(__name__)
 
 # API setup
 SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
@@ -23,13 +20,13 @@ def fetch_subscriptions(channel_id):
 
     while True:
         # Create a request to get subscriptions
-        request = youtube.subscriptions().list(
+        subscription_request = youtube.subscriptions().list(  # Changed variable name to avoid conflict
             part='snippet',
             channelId=channel_id,
             maxResults=50,  # Maximum allowed by API
             pageToken=next_page_token
         )
-        response = request.execute()
+        response = subscription_request.execute()
 
         # Collect all subscriptions
         all_subscriptions.extend(response.get('items', []))
@@ -43,14 +40,16 @@ def fetch_subscriptions(channel_id):
 
 @app.route('/GET/<channel_id>')
 def home(channel_id):
-    #channel_id = 'UCDE-xKodQrgV6SFoirM-u2Q'  
     subscriptions = fetch_subscriptions(channel_id)
     subscription_info = []
 
     for subscription in subscriptions:
         channel_title = subscription['snippet']['title']
         subscribed_channel_id = subscription['snippet']['resourceId']['channelId']
-        subscription_info.append(f"Subscribed Channel Title: {channel_title}, Channel ID: {subscribed_channel_id}")
+        subscription_info.append({
+            "title": channel_title,
+            "channel_id": subscribed_channel_id
+        })
 
     return jsonify(subscription_info)
 
