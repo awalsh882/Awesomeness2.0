@@ -19,17 +19,26 @@ def fetch_subscriptions(channel_id):
     next_page_token = None
 
     while True:
-        # Create a request to get subscriptions
-        subscription_request = youtube.subscriptions().list(  # Changed variable name to avoid conflict
-            part='snippet',
+        # Create a request to get subscriptions with expanded parts
+        subscription_request = youtube.subscriptions().list(
+            part='snippet,contentDetails,id,subscriberSnippet',  # Including more parts
             channelId=channel_id,
             maxResults=50,  # Maximum allowed by API
             pageToken=next_page_token
         )
         response = subscription_request.execute()
 
-        # Collect all subscriptions
-        all_subscriptions.extend(response.get('items', []))
+        # Collect all subscriptions and additional data
+        for item in response.get('items', []):
+            subscription = {
+                'id': item.get('id'),
+                'title': item['snippet']['title'],
+                'description': item['snippet']['description'],
+                'thumbnail_url': item['snippet']['thumbnails']['default']['url'],
+                'content_details': item.get('contentDetails'),
+                'subscriber_details': item.get('subscriberSnippet')
+            }
+            all_subscriptions.append(subscription)
 
         # Check if there is a next page
         next_page_token = response.get('nextPageToken')
@@ -37,6 +46,7 @@ def fetch_subscriptions(channel_id):
             break
 
     return all_subscriptions
+
 
 @app.route('/GET/<channel_id>')
 def home(channel_id):
