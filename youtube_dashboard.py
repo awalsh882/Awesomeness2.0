@@ -50,18 +50,23 @@ def fetch_subscriptions(channel_id):
 
 @app.route('/GET/<channel_id>')
 def home(channel_id):
-    subscriptions = fetch_subscriptions(channel_id)
-    subscription_info = []
+    try:
+        subscriptions = fetch_subscriptions(channel_id)
+        subscription_info = []
 
-    for subscription in subscriptions:
-        channel_title = subscription['snippet']['title']
-        subscribed_channel_id = subscription['snippet']['resourceId']['channelId']
-        subscription_info.append({
-            "title": channel_title,
-            "channel_id": subscribed_channel_id
-        })
+        for subscription in subscriptions:
+            channel_title = subscription['title']  # Directly using 'title'
+            subscribed_channel_id = subscription.get('subscriber_details', {}).get('channelId', 'Unknown Channel ID')  # Safely access using .get()
 
-    return jsonify(subscription_info)
+            subscription_info.append({
+                "title": channel_title,
+                "channel_id": subscribed_channel_id
+            })
+        
+        return jsonify(subscription_info)
+    except Exception as e:
+        app.logger.error(f"Failed to fetch subscriptions: {e}")
+        return jsonify({"error": "Failed to process request"}), 500
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=80)
