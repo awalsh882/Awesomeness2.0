@@ -1,5 +1,14 @@
 import { NextResponse } from 'next/server';
 
+interface AirtableRecord {
+  id: string;
+  fields: {
+    Date?: string;
+    Activity?: string;
+    'Elapsed Time'?: number;
+  };
+}
+
 export async function GET() {
   const baseId = process.env.AIRTABLE_BASE_ID;
   const tableName = process.env.AIRTABLE_TABLE_NAME;
@@ -18,12 +27,12 @@ export async function GET() {
       throw new Error(`Error: ${response.statusText}, Details: ${errorText}`);
     }
 
-    const data = await response.json();
+    const data: { records: AirtableRecord[] } = await response.json();
 
     // Ensure proper extraction and formatting
-    const formattedData = data.records.map((record: any) => ({
-      date: record.fields['Date'] || 'No Date',        // Ensure correct field names
-      activity: record.fields['Activity'] || 'No Activity',
+    const formattedData = data.records.map((record) => ({
+      date: record.fields.Date || 'No Date',        
+      activity: record.fields.Activity || 'No Activity',
       elapsedTime: record.fields['Elapsed Time'] || 0,
     }));
 

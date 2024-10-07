@@ -1,5 +1,3 @@
-// app/components/AirtableChart.tsx
-
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -8,13 +6,23 @@ import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Toolti
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
+// Define the structure of each data item
+interface DataItem {
+  date: string;
+  elapsedTime: number;
+}
+
 export default function AirtableChart() {
-  const [chartData, setChartData] = useState({ labels: [], datasets: [] });
+  // Use an explicit type for chartData to match the expected structure
+  const [chartData, setChartData] = useState<{ labels: string[]; datasets: { label: string; data: number[]; backgroundColor: string }[] }>({ 
+    labels: [], 
+    datasets: [] 
+  });
 
   useEffect(() => {
     fetch('/api/airtable-data')
       .then((response) => response.json())
-      .then((data) => {
+      .then((data: DataItem[]) => {  // Specify data as an array of DataItem
         setChartData({
           labels: data.map((item) => item.date),
           datasets: [
