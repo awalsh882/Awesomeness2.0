@@ -4,27 +4,37 @@ import os
 import json
 from datetime import datetime, timedelta, time
 from typing import Any
-
+from dotenv import load_dotenv  # Add this import
 from authlib.common.urls import extract_params
 from authlib.integrations.requests_client import OAuth2Session
-from pyairtable import Table
+import pandas as pd
 
+load_dotenv()
+
+# Replace with your WHOOP credentials
 username = os.getenv("USERNAME") or ""
 password = os.getenv("PASSWORD") or ""
-AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
-BASE_ID = os.getenv("AIRTABLE_BASE_ID")
-TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME")
 
 AUTH_URL = "https://api-7.whoop.com"
 REQUEST_URL = "https://api.prod.whoop.com/developer"
 
-
+# Authentication helper
 def _auth_password_json(_client, _method, uri, headers, body):
     body = json.dumps(dict(extract_params(body)))
     headers["Content-Type"] = "application/json"
     return uri, headers, body
 
+# Define the adjust_timezone function
+def adjust_timezone(dt_str, offset_str):
+    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    hours, minutes = map(int, offset_str.split(":"))
+    if "+" in offset_str:
+        adjusted_dt = dt - timedelta(hours=hours, minutes=minutes)
+    else:
+        adjusted_dt = dt + timedelta(hours=hours, minutes=minutes)
+    return adjusted_dt.isoformat()
 
+# WhoopClient class for interacting with the WHOOP API
 class WhoopClient:
     TOKEN_ENDPOINT_AUTH_METHOD = "password_json"
 
@@ -32,6 +42,7 @@ class WhoopClient:
         self._username = username
         self._password = password
 
+        # OAuth2 session
         self.session = OAuth2Session(
             token_endpoint=f"{AUTH_URL}/oauth/token",
             token_endpoint_auth_method=self.TOKEN_ENDPOINT_AUTH_METHOD,
@@ -58,16 +69,8 @@ class WhoopClient:
     def close(self) -> None:
         self.session.close()
 
-    def get_sleep_collection(self, start_date: str | None = None, end_date: str | None = None) -> list[dict[str, Any]]:
-        start, end = self._format_dates(start_date, end_date)
-        return self._make_paginated_request(
-            method="GET",
-            url_slug="v1/activity/sleep",
-            params={"start": start, "end": end, "limit": 25},
-        )
-
     def authenticate(self, **kwargs) -> None:
-        self.session.fetch_token(
+        token = self.session.fetch_token(
             url=f"{AUTH_URL}/oauth/token",
             username=self._username,
             password=self._password,
@@ -75,11 +78,22 @@ class WhoopClient:
             **kwargs,
         )
 
+        if 'access_token' in token:
+            self.session.token = token  # Store the token if available
+        else:
+            raise Exception("Authentication failed. Access token not found.")
+            
+        # Fetch and store the user ID if not already set
         if not self.user_id:
             self.user_id = str(self.session.token.get("user", {}).get("id", ""))
 
-    def is_authenticated(self) -> bool:
-        return self.session.token is not None
+    def get_sleep_collection(self, start_date: str | None = None, end_date: str | None = None) -> list[dict[str, Any]]:
+        start, end = self._format_dates(start_date, end_date)
+        return self._make_paginated_request(
+            method="GET",
+            url_slug="v1/activity/sleep",
+            params={"start": start, "end": end, "limit": 25},
+        )
 
     def _make_paginated_request(self, method, url_slug, **kwargs) -> list[dict[str, Any]]:
         params = kwargs.pop("params", {})
@@ -95,7 +109,7 @@ class WhoopClient:
 
             response_data += response["records"]
 
-            if next_token := response["next_token"]:
+            if next_token := response.get("next_token"):
                 params["nextToken"] = next_token
             else:
                 break
@@ -103,12 +117,17 @@ class WhoopClient:
         return response_data
 
     def _make_request(self, method: str, url_slug: str, **kwargs: Any) -> dict[str, Any]:
+        print(f"Making request to: {REQUEST_URL}/{url_slug} with params: {kwargs.get('params')}")
         response = self.session.request(
             method=method,
             url=f"{REQUEST_URL}/{url_slug}",
             **kwargs,
         )
-
+        
+        # Print the full response content for debugging
+        print(f"Response status code: {response.status_code}")
+        print(f"Response content: {response.content}")
+        
         response.raise_for_status()
 
         return response.json()
@@ -120,7 +139,7 @@ class WhoopClient:
         start = datetime.combine(
             datetime.fromisoformat(start_date)
             if start_date
-            else datetime.today() - timedelta(days=3),  # Fetch last 3 days to ensure no missing data
+            else datetime.today() - timedelta(days=365),  # Fetch last 12 months of data
             time.min,
         )
 
@@ -130,37 +149,23 @@ class WhoopClient:
             )
 
         return (
-            start.isoformat() + "Z",
-            end.isoformat(timespec="seconds") + "Z",
+            start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            end.strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
 
+def fetch_and_save_sleep_data():
+    print(f"Starting function with username: {username}")
 
-def check_existing_records(table: Table, record_id: str) -> bool:
-    """Check if a record already exists in the Airtable table."""
-    existing_records = table.all(formula=f"{{ID}} = '{record_id}'")
-    return len(existing_records) > 0
-
-
-def run_whoop_sleep(event, context):
-    print(f"Starting function with username: {username}, AIRTABLE_API_KEY: {AIRTABLE_API_KEY}")
     client = WhoopClient(username, password)
 
+    # Fetch sleep data for the past 12 months
     today = datetime.today().date()
-    last_fetched = today - timedelta(days=3)  # Fetch last 3 days to ensure no missed data
+    last_year = today - timedelta(days=300)
 
     today_iso = today.isoformat()
-    last_fetched_iso = last_fetched.isoformat()
+    last_year_iso = last_year.isoformat()
 
-    sleep_data = client.get_sleep_collection(last_fetched_iso, today_iso)
-
-    def adjust_timezone(dt_str, offset_str):
-        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-        hours, minutes = map(int, offset_str.split(":"))
-        if "+" in offset_str:
-            adjusted_dt = dt - timedelta(hours=hours, minutes=minutes)
-        else:
-            adjusted_dt = dt + timedelta(hours=hours, minutes=minutes)
-        return adjusted_dt.isoformat()
+    sleep_data = client.get_sleep_collection(last_year_iso, today_iso)
 
     def convert_millis_to_duration(millis):
         return millis // 1000
@@ -168,9 +173,9 @@ def run_whoop_sleep(event, context):
     extracted_sleep_data = [
         {
             "ID": record["id"],
-            "timezone_offset": record["timezone_offset"],
-            "timezone_adjusted_start": adjust_timezone(record["start"], record["timezone_offset"]),
-            "timezone_adjusted_end": adjust_timezone(record["end"], record["timezone_offset"]),
+            "timezone_offset": record["timezone_offset"],  # Add timezone offset
+            "timezone_adjusted_start": adjust_timezone(record["start"], record["timezone_offset"]),  # Already present
+            "timezone_adjusted_end": adjust_timezone(record["end"], record["timezone_offset"]),  # Already present
             "total_in_bed_time": convert_millis_to_duration(record["score"]["stage_summary"]["total_in_bed_time_milli"]),
             "total_slow_wave_sleep_time": convert_millis_to_duration(record["score"]["stage_summary"]["total_slow_wave_sleep_time_milli"]),
             "total_rem_sleep_time": convert_millis_to_duration(record["score"]["stage_summary"]["total_rem_sleep_time_milli"]),
@@ -180,16 +185,12 @@ def run_whoop_sleep(event, context):
         for record in sleep_data
     ]
 
-    table = Table(AIRTABLE_API_KEY, BASE_ID, TABLE_NAME)
+    # Convert data to DataFrame and save as CSV
+    df = pd.DataFrame(extracted_sleep_data)
+    output_file = "whoop_sleep_data.csv"
+    df.to_csv(output_file, index=False)
+    print(f"Data successfully saved to {output_file}")
 
-    for record in extracted_sleep_data:
-        if not check_existing_records(table, record["ID"]):  # Only add if the record doesn't exist
-            try:
-                response = table.create(record)
-                print(f"Record created: {response}")
-            except Exception as e:
-                print(f"Error creating record: {e}")
-        else:
-            print(f"Record already exists: {record['ID']}")
-
-    print("Data uploaded successfully!")
+# Run the function
+if __name__ == "__main__":
+    fetch_and_save_sleep_data()
